@@ -1,5 +1,3 @@
-export const config = { api: { bodyParser: true } };
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -7,9 +5,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
   try {
-    const { endpoint, ...body } = req.body;
+    let body = req.body;
+    if (typeof body === 'string') body = JSON.parse(body);
+    if (!body) {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      body = JSON.parse(Buffer.concat(chunks).toString());
+    }
+    const { endpoint, ...rest } = body;
     if (!endpoint) { res.status(400).json({ result: 'error', message: 'endpoint required' }); return; }
-    const params = new URLSearchParams(body);
+    const params = new URLSearchParams(rest);
     const response = await fetch('https://api.next-engine.org' + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

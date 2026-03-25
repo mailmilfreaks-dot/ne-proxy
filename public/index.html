@@ -1,0 +1,698 @@
+bash
+
+cat << 'HTMLEOF'
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>品切れ在庫ダッシュボード</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans',Meiryo,sans-serif;font-size:13px;color:#1a1a1a;background:#f5f5f3;min-height:100vh;}
+#app{max-width:1100px;margin:0 auto;padding:1.5rem;}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:1.25rem;margin-bottom:1rem;}
+.auth-wrap{max-width:440px;margin:3rem auto;}
+.auth-title{font-size:20px;font-weight:500;margin-bottom:4px;}
+.auth-sub{color:#666;font-size:12px;margin-bottom:1.5rem;}
+label{display:block;font-size:11px;color:#666;margin-bottom:3px;font-weight:500;}
+input[type=text],input[type=password],textarea{width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;}
+input:focus,textarea:focus{outline:none;border-color:#999;}
+textarea{resize:none;height:64px;line-height:1.5;}
+.form-group{margin-bottom:10px;}
+.btn{background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-family:inherit;cursor:pointer;font-weight:500;width:100%;margin-top:4px;}
+.btn:hover{opacity:.85;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-sm{background:transparent;border:1px solid #ddd;border-radius:8px;padding:5px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:#1a1a1a;}
+.btn-sm:hover{background:#f5f5f5;}
+.info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:12px;color:#1d4ed8;margin-bottom:12px;line-height:1.6;}
+.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:12px;color:#b91c1c;margin-bottom:10px;}
+.success-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:12px;color:#15803d;margin-bottom:10px;}
+.parsed-preview{background:#f5f5f3;border-radius:8px;padding:8px 10px;font-size:11px;font-family:monospace;color:#666;margin-top:6px;line-height:1.7;}
+.spinner{width:28px;height:28px;border:2px solid #e5e5e5;border-top-color:#1a1a1a;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:320px;gap:14px;}
+.loading-msg{font-size:13px;color:#666;}
+.dash-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;}
+.dash-title{font-size:17px;font-weight:500;}
+.dash-meta{font-size:11px;color:#666;margin-top:2px;}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1.25rem;}
+.metric{background:#f5f5f3;border-radius:8px;padding:12px 14px;}
+.metric-label{font-size:11px;color:#666;margin-bottom:4px;}
+.metric-value{font-size:22px;font-weight:500;}
+.metric-value.red{color:#E24B4A;}
+.metric-value.amber{color:#BA7517;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;font-size:11px;font-weight:500;color:#666;padding:6px 10px;border-bottom:1px solid #f0f0f0;white-space:nowrap;}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#fafafa;}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.section-title{font-size:13px;font-weight:500;}
+.section-sub{font-size:11px;color:#666;margin-bottom:10px;line-height:1.5;}
+.table-scroll{overflow-x:auto;}
+.badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:500;}
+.badge-red{background:#FCEBEB;color:#A32D2D;}
+.badge-amber{background:#FAEEDA;color:#854F0B;}
+.badge-green{background:#EAF3DE;color:#3B6D11;}
+.tag{display:inline-block;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:500;margin-left:3px;}
+.tag-store{background:#E1F5EE;color:#085041;}
+.tag-sale{background:#FAEEDA;color:#633806;}
+.mono{font-family:monospace;font-size:11px;}
+.trunc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+select{padding:5px 8px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a1a;font-size:12px;font-family:inherit;}
+.filter-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+code{font-family:monospace;font-size:11px;background:rgba(0,0,0,.06);padding:1px 4px;border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const CFG={
+  clientId:'nxaQhkzstc4fUW',
+  clientSecret:'jdKFk5QAsqmHyaXlTLEbhtnVI97fcwgC8YS4PrBe',
+  redirectUri:location.origin,
+  proxyBase:'/api/proxy',
+  neBase:'https://base.next-engine.org',
+  leadDays:21,lookback:30,staleDays:365,
+};
+
+let S={
+  screen:'init',token:null,refresh:null,lastUpdated:null,
+  error:null,loadMsg:'',parsedUid:'',parsedState:'',
+  data:{products:[],makerSummary:[],storeItems:[],saleItems:[]},
+  filter:{maker:'',urgency:''},
+};
+
+function saveToken(t,r){try{localStorage.setItem('ne_token',JSON.stringify({t,r}));}catch(e){}}
+function loadToken(){try{const r=localStorage.getItem('ne_token');return r?JSON.parse(r):null;}catch(e){return null;}}
+function clearToken(){try{localStorage.removeItem('ne_token');}catch(e){}}
+
+function parseRedirectUrl(raw){
+  try{
+    const url=new URL(raw.trim());
+    const uid=url.searchParams.get('uid');
+    const state=url.searchParams.get('state');
+    return{uid:uid||'',state:state||'',ok:!!(uid&&state)};
+  }catch(e){return{uid:'',state:'',ok:false};}
+}
+
+async function proxyPost(endpoint,params){
+  const res=await fetch(CFG.proxyBase,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({endpoint,...params}),
+  });
+  if(!res.ok)throw new Error('Proxy HTTP '+res.status);
+  const json=await res.json();
+  if(json.result!=='success')throw new Error(json.message||'API error: '+endpoint);
+  return json;
+}
+
+async function auth(uid,state){
+  const j=await proxyPost('/api_neauth',{uid,state,client_id:CFG.clientId,client_secret:CFG.clientSecret});
+  S.token=j.access_token;S.refresh=j.refresh_token;
+  saveToken(S.token,S.refresh);
+}
+
+async function ne(endpoint,params={}){return proxyPost(endpoint,{access_token:S.token,...params});}
+
+function fmt(d){return d.toISOString().split('T')[0];}
+function daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d;}
+function extractMaker(name){if(!name)return '不明';const m=name.match(/^([^\s\u3000【\[（(\/]+)/);return m?m[1].substring(0,12):name.substring(0,12);}
+
+function fitDecay(daily){
+  const rev=[...daily].reverse();
+  const valid=rev.map((s,t)=>({t,s})).filter(p=>p.s>0);
+  if(valid.length===0)return{v0:0,lambda:0};
+  if(valid.length===1)return{v0:valid[0].s,lambda:0};
+  const pts=valid.map(p=>({t:p.t,y:Math.log(p.s)}));
+  const tm=pts.reduce((a,p)=>a+p.t,0)/pts.length;
+  const ym=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+  const num=pts.reduce((a,p)=>a+(p.t-tm)*(p.y-ym),0);
+  const den=pts.reduce((a,p)=>a+(p.t-tm)**2,0);
+  const slope=den!==0?num/den:0;
+  const lambda=-slope;
+  const v0=Math.exp(ym-slope*tm)*Math.exp(-lambda*(daily.length-1));
+  return{v0:Math.max(0,v0),lambda};
+}
+
+function urgency(avg){if(avg>=3)return'critical';if(avg>=0.3)return'warning';return'ok';}
+
+function processData(stocks,orders,movements){
+  const today=new Date();
+  const products=stocks.map(item=>{
+    const gid=item.stock_goods_id;
+    const code=item.stock_goods_owner_goods_id||'-';
+    const name=item.stock_goods_name||'-';
+    const maker=extractMaker(name);
+    const relevant=orders.filter(r=>r.receiveorder_row_goods_id===gid||r.receiveorder_row_goods_owner_goods_id===code);
+    const daily=new Array(CFG.lookback).fill(0);
+    relevant.forEach(r=>{
+      const d=new Date(r.receiveorder_row_order_date);
+      const da=Math.floor((today-d)/86400000);
+      if(da>=0&&da<CFG.lookback)daily[da]+=(parseInt(r.receiveorder_row_quantity)||0);
+    });
+    const total30=daily.reduce((a,b)=>a+b,0);
+    const avg=Math.round(total30/CFG.lookback*10)/10;
+    const{v0,lambda}=fitDecay(daily);
+    const iMovs=movements.filter(m=>m.stockiohistory_goods_id===gid||m.stockiohistory_goods_owner_goods_id===code)
+      .sort((a,b)=>new Date(b.stockiohistory_date)-new Date(a.stockiohistory_date));
+    const lastMov=iMovs[0];
+    const soDays=lastMov?Math.max(0,Math.floor((today-new Date(lastMov.stockiohistory_date))/86400000)):null;
+    const storeQ=iMovs.filter(m=>String(m.stockiohistory_division||'').match(/店舗|店/)).reduce((a,m)=>a+Math.abs(parseInt(m.stockiohistory_quantity)||0),0);
+    const webQ=iMovs.filter(m=>String(m.stockiohistory_division||'').match(/WEB|web|EC|通販/)).reduce((a,m)=>a+Math.abs(parseInt(m.stockiohistory_quantity)||0),0);
+    const isStore=storeQ>webQ&&storeQ>0;
+    const isSale=!orders.some(r=>{
+      const d=new Date(r.receiveorder_row_order_date);
+      return(r.receiveorder_row_goods_id===gid||r.receiveorder_row_goods_owner_goods_id===code)&&(today-d)<CFG.staleDays*86400000;
+    });
+    return{gid,code,name,maker,avg,soDays,urg:urgency(avg),isStore,isSale,storeQ,webQ};
+  });
+  const makerMap={};
+  products.forEach(p=>{
+    if(!makerMap[p.maker])makerMap[p.maker]={maker:p.maker,count:0,critical:0,warning:0};
+    makerMap[p.maker].count++;
+    if(p.urg==='critical')makerMap[p.maker].critical++;
+    if(p.urg==='warning')makerMap[p.maker].warning++;
+  });
+  return{products,makerSummary:Object.values(makerMap).sort((a,b)=>b.count-a.count),storeItems:products.filter(p=>p.isStore),saleItems:products.filter(p=>p.isSale)};
+}
+
+async function fetchData(){
+  S.screen='loading';render();
+  try{
+    S.loadMsg='在庫0のSKUを取得中...';render();
+    const stockRes=await ne('/api_v1_master_stock/search',{'stock_quantity-eq':'0','fields':'stock_id,stock_goods_id,stock_goods_owner_goods_id,stock_goods_name,stock_quantity','limit':'200'});
+    const stocks=stockRes.data||[];
+    if(stocks.length===0){S.data={products:[],makerSummary:[],storeItems:[],saleItems:[]};S.lastUpdated=new Date();S.screen='dashboard';render();return;}
+    S.loadMsg='受注データ（直近30日）を取得中...';render();
+    const orderRes=await ne('/api_v1_receiveorder_row/search',{'receiveorder_row_order_date-from':fmt(daysAgo(CFG.lookback)),'receiveorder_row_order_date-to':fmt(new Date()),'fields':'receiveorder_row_goods_id,receiveorder_row_goods_owner_goods_id,receiveorder_row_quantity,receiveorder_row_order_date','limit':'2000'});
+    const orders=orderRes.data||[];
+    S.loadMsg='在庫変動履歴を取得中...';render();
+    const movRes=await ne('/api_v1_master_stockiohistory/search',{'stockiohistory_date-from':fmt(daysAgo(365)),'fields':'stockiohistory_goods_id,stockiohistory_goods_owner_goods_id,stockiohistory_quantity,stockiohistory_date,stockiohistory_division','limit':'2000'});
+    const movements=movRes.data||[];
+    S.loadMsg='データを分析中...';render();
+    S.data=processData(stocks,orders,movements);
+    S.lastUpdated=new Date();S.screen='dashboard';
+  }catch(e){S.error=e.message;S.screen='error';}
+  render();
+}
+
+function badgeUrgency(u){
+  if(u==='critical')return'<span class="badge badge-red">今すぐ発注</span>';
+  if(u==='warning')return'<span class="badge badge-amber">発注準備</span>';
+  return'<span class="badge badge-green">様子見</span>';
+}
+
+function renderAuth(){return`<div class="auth-wrap">
+<div class="auth-title">品切れ在庫ダッシュボード</div>
+<div class="auth-sub">NeXT Engine に接続して品切れSKUをリアルタイム分析します</div>
+<div class="card">
+<div class="info-box">① 下のボタンを押してNeXT Engineにログイン<br>② ログイン後にこのページに戻ってきます（自動）<br>③ 自動で取得されない場合はURLを貼り付けてください</div>
+<button class="btn" id="btnLogin">① NeXT Engineにログイン ↗</button>
+<div style="margin-top:14px;" class="form-group">
+<label>URLを手動で貼り付ける場合</label>
+<textarea id="urlPaste" placeholder="https://ne-proxy.vercel.app/?uid=...&state=..."></textarea>
+<div id="parsePreview"></div>
+</div>
+<button class="btn" id="btnAuthUrl" disabled>認証してデータを取得</button>
+${S.error?`<div class="err-box" style="margin-top:10px;">${S.error}</div>`:''}
+</div></div>`;}
+
+function renderLoading(){return`<div class="loading-wrap"><div class="spinner"></div><div class="loading-msg">${S.loadMsg||'接続中...'}</div></div>`;}
+
+function renderError(){return`<div class="auth-wrap"><div class="card">
+<div style="font-size:14px;font-weight:500;color:#b91c1c;margin-bottom:8px;">エラーが発生しました</div>
+<div style="font-size:12px;color:#666;margin-bottom:1rem;">${S.error}</div>
+<button class="btn-sm" id="btnBack">戻る</button>
+</div></div>`;}
+
+function renderDashboard(){
+  const{products,makerSummary,storeItems,saleItems}=S.data;
+  const filtered=products.filter(p=>{
+    if(S.filter.maker&&p.maker!==S.filter.maker)return false;
+    if(S.filter.urgency&&p.urg!==S.filter.urgency)return false;
+    return true;
+  });
+  const crit=products.filter(p=>p.urg==='critical').length;
+  const warn=products.filter(p=>p.urg==='warning').length;
+  const makers=[...new Set(products.map(p=>p.maker))].sort();
+  const upd=S.lastUpdated?S.lastUpdated.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+  return`<div class="dash-header">
+<div><div class="dash-title">品切れ在庫ダッシュボード</div><div class="dash-meta">最終更新：${upd}　<span style="cursor:pointer;text-decoration:underline;" id="btnLogout">ログアウト</span></div></div>
+<button class="btn-sm" id="btnRefresh">↺ データ更新</button>
+</div>
+<div class="metrics">
+<div class="metric"><div class="metric-label">品切れSKU総数</div><div class="metric-value">${products.length}</div></div>
+<div class="metric"><div class="metric-label">今すぐ発注</div><div class="metric-value red">${crit}</div></div>
+<div class="metric"><div class="metric-label">発注準備</div><div class="metric-value amber">${warn}</div></div>
+<div class="metric"><div class="metric-label">メーカー数</div><div class="metric-value">${makerSummary.length}</div></div>
+</div>
+<div class="card">
+<div class="section-head"><div class="section-title">メーカー別集計</div></div>
+<div class="table-scroll"><table>
+<thead><tr><th>メーカー</th><th style="text-align:right;">品切れSKU</th><th style="text-align:right;">今すぐ発注</th><th style="text-align:right;">発注準備</th></tr></thead>
+<tbody>${makerSummary.map(m=>`<tr><td>${m.maker}</td><td style="text-align:right;font-weight:500;">${m.count}</td><td style="text-align:right;">${m.critical>0?`<span style="color:#E24B4A;font-weight:500;">${m.critical}</span>`:'—'}</td><td style="text-align:right;">${m.warning>0?`<span style="color:#BA7517;font-weight:500;">${m.warning}</span>`:'—'}</td></tr>`).join('')}</tbody>
+</table></div></div>
+<div class="card">
+<div class="section-head">
+<div class="section-title">品切れSKU一覧 (${filtered.length}件)</div>
+<div class="filter-row">
+<select id="fMaker"><option value="">全メーカー</option>${makers.map(m=>`<option value="${m}"${S.filter.maker===m?' selected':''}>${m}</option>`).join('')}</select>
+<select id="fUrgency"><option value="">全緊急度</option><option value="critical">今すぐ発注</option><option value="warning">発注準備</option><option value="ok">様子見</option></select>
+</div></div>
+<div class="table-scroll"><table style="table-layout:fixed;width:100%;">
+<thead><tr><th style="width:90px;">メーカー</th><th style="width:105px;">商品コード</th><th>商品名</th><th style="width:70px;text-align:right;">品切れ経過</th><th style="width:80px;text-align:right;">販売速度/日</th><th style="width:105px;">発注優先度</th></tr></thead>
+<tbody>${filtered.length===0?'<tr><td colspan="6" style="text-align:center;color:#666;padding:2rem;">該当する商品がありません</td></tr>':
+filtered.map(p=>`<tr><td style="color:#666;">${p.maker}</td><td class="mono">${p.code}</td><td class="trunc">${p.name}${p.isStore?'<span class="tag tag-store">店舗優位</span>':''}${p.isSale?'<span class="tag tag-sale">セール推奨</span>':''}</td><td style="text-align:right;">${p.soDays!==null?p.soDays+'日':'—'}</td><td style="text-align:right;">${p.avg>0?p.avg+'個':'—'}</td><td>${badgeUrgency(p.urg)}</td></tr>`).join('')}
+</tbody></table></div></div>
+${storeItems.length>0?`<div class="card">
+<div class="section-head"><div class="section-title" style="color:#085041;">🏪 店舗優位品 (${storeItems.length}件)</div></div>
+<div class="section-sub">店舗チャネルの動きがWEBより多い商品です。</div>
+<div class="table-scroll"><table><thead><tr><th>商品コード</th><th>商品名</th><th>メーカー</th><th style="text-align:right;">店舗変動</th><th style="text-align:right;">WEB変動</th></tr></thead>
+<tbody>${storeItems.map(p=>`<tr><td class="mono">${p.code}</td><td class="trunc">${p.name}</td><td style="color:#666;">${p.maker}</td><td style="text-align:right;color:#0F6E56;font-weight:500;">${p.storeQ}</td><td style="text-align:right;color:#666;">${p.webQ}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+${saleItems.length>0?`<div class="card">
+<div class="section-head"><div class="section-title" style="color:#633806;">🏷 セール推奨品 (${saleItems.length}件)</div></div>
+<div class="section-sub">過去1年間の受注がない商品です。</div>
+<div class="table-scroll"><table><thead><tr><th>商品コード</th><th>商品名</th><th>メーカー</th><th style="text-align:right;">品切れ経過</th></tr></thead>
+<tbody>${saleItems.map(p=>`<tr><td class="mono">${p.code}</td><td class="trunc">${p.name}</td><td style="color:#666;">${p.maker}</td><td style="text-align:right;">${p.soDays!==null?p.soDays+'日':'—'}</td></tr>`).join('')}</tbody></table></div></div>`:''}`;
+}
+
+function render(){
+  const root=document.getElementById('app');
+  if(!root)return;
+  switch(S.screen){
+    case'auth':root.innerHTML=renderAuth();break;
+    case'loading':root.innerHTML=renderLoading();break;
+    case'dashboard':root.innerHTML=renderDashboard();break;
+    case'error':root.innerHTML=renderError();break;
+    default:root.innerHTML=renderLoading();
+  }
+  bind();
+}
+
+function bind(){
+  const urlPaste=document.getElementById('urlPaste');
+  const btnAuthUrl=document.getElementById('btnAuthUrl');
+  const preview=document.getElementById('parsePreview');
+  urlPaste?.addEventListener('input',e=>{
+    const val=e.target.value.trim();
+    if(!val){preview.innerHTML='';btnAuthUrl.disabled=true;return;}
+    const{uid,state,ok}=parseRedirectUrl(val);
+    if(ok){
+      S.parsedUid=uid;S.parsedState=state;
+      preview.innerHTML=`<div class="parsed-preview"><span style="color:green;">✓ 認識しました</span><br>uid: ${uid.substring(0,24)}...<br>state: ${state}</div>`;
+      btnAuthUrl.disabled=false;
+    }else{
+      preview.innerHTML=`<div class="parsed-preview" style="color:#b91c1c;">URLを認識できません</div>`;
+      btnAuthUrl.disabled=true;
+    }
+  });
+  document.getElementById('btnLogin')?.addEventListener('click',()=>{
+    const url=`${CFG.neBase}/users/sign_in?client_id=${encodeURIComponent(CFG.clientId)}&redirect_uri=${encodeURIComponent(CFG.redirectUri)}`;
+    location.href=url;
+  });
+  btnAuthUrl?.addEventListener('click',async()=>{
+    if(!S.parsedUid||!S.parsedState)return;
+    S.error=null;S.screen='loading';S.loadMsg='認証中...';render();
+    try{await auth(S.parsedUid,S.parsedState);await fetchData();}
+    catch(e){S.error=e.message;S.screen='error';render();}
+  });
+  document.getElementById('btnBack')?.addEventListener('click',()=>{S.screen='auth';S.error=null;render();});
+  document.getElementById('btnRefresh')?.addEventListener('click',()=>fetchData());
+  document.getElementById('btnLogout')?.addEventListener('click',()=>{clearToken();S.token=null;S.screen='auth';render();});
+  document.getElementById('fMaker')?.addEventListener('change',e=>{S.filter.maker=e.target.value;render();});
+  document.getElementById('fUrgency')?.addEventListener('change',e=>{S.filter.urgency=e.target.value;render();});
+}
+
+async function init(){
+  const params=new URLSearchParams(location.search);
+  const uid=params.get('uid');
+  const state=params.get('state');
+  if(uid&&state){
+    history.replaceState({},'',location.pathname);
+    S.screen='loading';S.loadMsg='認証中...';render();
+    try{await auth(uid,state);await fetchData();}
+    catch(e){S.error=e.message;S.screen='error';render();}
+    return;
+  }
+  const saved=loadToken();
+  if(saved?.t){S.token=saved.t;S.refresh=saved.r;await fetchData();}
+  else{S.screen='auth';render();}
+}
+
+init();
+</script>
+</body>
+</html>
+HTMLEOF
+echo "Done"
+出力
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>品切れ在庫ダッシュボード</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans',Meiryo,sans-serif;font-size:13px;color:#1a1a1a;background:#f5f5f3;min-height:100vh;}
+#app{max-width:1100px;margin:0 auto;padding:1.5rem;}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:1.25rem;margin-bottom:1rem;}
+.auth-wrap{max-width:440px;margin:3rem auto;}
+.auth-title{font-size:20px;font-weight:500;margin-bottom:4px;}
+.auth-sub{color:#666;font-size:12px;margin-bottom:1.5rem;}
+label{display:block;font-size:11px;color:#666;margin-bottom:3px;font-weight:500;}
+input[type=text],input[type=password],textarea{width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;}
+input:focus,textarea:focus{outline:none;border-color:#999;}
+textarea{resize:none;height:64px;line-height:1.5;}
+.form-group{margin-bottom:10px;}
+.btn{background:#1a1a1a;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-family:inherit;cursor:pointer;font-weight:500;width:100%;margin-top:4px;}
+.btn:hover{opacity:.85;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-sm{background:transparent;border:1px solid #ddd;border-radius:8px;padding:5px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:#1a1a1a;}
+.btn-sm:hover{background:#f5f5f5;}
+.info-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:12px;color:#1d4ed8;margin-bottom:12px;line-height:1.6;}
+.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:12px;color:#b91c1c;margin-bottom:10px;}
+.success-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:12px;color:#15803d;margin-bottom:10px;}
+.parsed-preview{background:#f5f5f3;border-radius:8px;padding:8px 10px;font-size:11px;font-family:monospace;color:#666;margin-top:6px;line-height:1.7;}
+.spinner{width:28px;height:28px;border:2px solid #e5e5e5;border-top-color:#1a1a1a;border-radius:50%;animation:spin .7s linear infinite;margin:0 auto;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:320px;gap:14px;}
+.loading-msg{font-size:13px;color:#666;}
+.dash-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;}
+.dash-title{font-size:17px;font-weight:500;}
+.dash-meta{font-size:11px;color:#666;margin-top:2px;}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1.25rem;}
+.metric{background:#f5f5f3;border-radius:8px;padding:12px 14px;}
+.metric-label{font-size:11px;color:#666;margin-bottom:4px;}
+.metric-value{font-size:22px;font-weight:500;}
+.metric-value.red{color:#E24B4A;}
+.metric-value.amber{color:#BA7517;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;font-size:11px;font-weight:500;color:#666;padding:6px 10px;border-bottom:1px solid #f0f0f0;white-space:nowrap;}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#fafafa;}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.section-title{font-size:13px;font-weight:500;}
+.section-sub{font-size:11px;color:#666;margin-bottom:10px;line-height:1.5;}
+.table-scroll{overflow-x:auto;}
+.badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:500;}
+.badge-red{background:#FCEBEB;color:#A32D2D;}
+.badge-amber{background:#FAEEDA;color:#854F0B;}
+.badge-green{background:#EAF3DE;color:#3B6D11;}
+.tag{display:inline-block;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:500;margin-left:3px;}
+.tag-store{background:#E1F5EE;color:#085041;}
+.tag-sale{background:#FAEEDA;color:#633806;}
+.mono{font-family:monospace;font-size:11px;}
+.trunc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+select{padding:5px 8px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a1a;font-size:12px;font-family:inherit;}
+.filter-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+code{font-family:monospace;font-size:11px;background:rgba(0,0,0,.06);padding:1px 4px;border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const CFG={
+  clientId:'nxaQhkzstc4fUW',
+  clientSecret:'jdKFk5QAsqmHyaXlTLEbhtnVI97fcwgC8YS4PrBe',
+  redirectUri:location.origin,
+  proxyBase:'/api/proxy',
+  neBase:'https://base.next-engine.org',
+  leadDays:21,lookback:30,staleDays:365,
+};
+
+let S={
+  screen:'init',token:null,refresh:null,lastUpdated:null,
+  error:null,loadMsg:'',parsedUid:'',parsedState:'',
+  data:{products:[],makerSummary:[],storeItems:[],saleItems:[]},
+  filter:{maker:'',urgency:''},
+};
+
+function saveToken(t,r){try{localStorage.setItem('ne_token',JSON.stringify({t,r}));}catch(e){}}
+function loadToken(){try{const r=localStorage.getItem('ne_token');return r?JSON.parse(r):null;}catch(e){return null;}}
+function clearToken(){try{localStorage.removeItem('ne_token');}catch(e){}}
+
+function parseRedirectUrl(raw){
+  try{
+    const url=new URL(raw.trim());
+    const uid=url.searchParams.get('uid');
+    const state=url.searchParams.get('state');
+    return{uid:uid||'',state:state||'',ok:!!(uid&&state)};
+  }catch(e){return{uid:'',state:'',ok:false};}
+}
+
+async function proxyPost(endpoint,params){
+  const res=await fetch(CFG.proxyBase,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({endpoint,...params}),
+  });
+  if(!res.ok)throw new Error('Proxy HTTP '+res.status);
+  const json=await res.json();
+  if(json.result!=='success')throw new Error(json.message||'API error: '+endpoint);
+  return json;
+}
+
+async function auth(uid,state){
+  const j=await proxyPost('/api_neauth',{uid,state,client_id:CFG.clientId,client_secret:CFG.clientSecret});
+  S.token=j.access_token;S.refresh=j.refresh_token;
+  saveToken(S.token,S.refresh);
+}
+
+async function ne(endpoint,params={}){return proxyPost(endpoint,{access_token:S.token,...params});}
+
+function fmt(d){return d.toISOString().split('T')[0];}
+function daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d;}
+function extractMaker(name){if(!name)return '不明';const m=name.match(/^([^\s\u3000【\[（(\/]+)/);return m?m[1].substring(0,12):name.substring(0,12);}
+
+function fitDecay(daily){
+  const rev=[...daily].reverse();
+  const valid=rev.map((s,t)=>({t,s})).filter(p=>p.s>0);
+  if(valid.length===0)return{v0:0,lambda:0};
+  if(valid.length===1)return{v0:valid[0].s,lambda:0};
+  const pts=valid.map(p=>({t:p.t,y:Math.log(p.s)}));
+  const tm=pts.reduce((a,p)=>a+p.t,0)/pts.length;
+  const ym=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+  const num=pts.reduce((a,p)=>a+(p.t-tm)*(p.y-ym),0);
+  const den=pts.reduce((a,p)=>a+(p.t-tm)**2,0);
+  const slope=den!==0?num/den:0;
+  const lambda=-slope;
+  const v0=Math.exp(ym-slope*tm)*Math.exp(-lambda*(daily.length-1));
+  return{v0:Math.max(0,v0),lambda};
+}
+
+function urgency(avg){if(avg>=3)return'critical';if(avg>=0.3)return'warning';return'ok';}
+
+function processData(stocks,orders,movements){
+  const today=new Date();
+  const products=stocks.map(item=>{
+    const gid=item.stock_goods_id;
+    const code=item.stock_goods_owner_goods_id||'-';
+    const name=item.stock_goods_name||'-';
+    const maker=extractMaker(name);
+    const relevant=orders.filter(r=>r.receiveorder_row_goods_id===gid||r.receiveorder_row_goods_owner_goods_id===code);
+    const daily=new Array(CFG.lookback).fill(0);
+    relevant.forEach(r=>{
+      const d=new Date(r.receiveorder_row_order_date);
+      const da=Math.floor((today-d)/86400000);
+      if(da>=0&&da<CFG.lookback)daily[da]+=(parseInt(r.receiveorder_row_quantity)||0);
+    });
+    const total30=daily.reduce((a,b)=>a+b,0);
+    const avg=Math.round(total30/CFG.lookback*10)/10;
+    const{v0,lambda}=fitDecay(daily);
+    const iMovs=movements.filter(m=>m.stockiohistory_goods_id===gid||m.stockiohistory_goods_owner_goods_id===code)
+      .sort((a,b)=>new Date(b.stockiohistory_date)-new Date(a.stockiohistory_date));
+    const lastMov=iMovs[0];
+    const soDays=lastMov?Math.max(0,Math.floor((today-new Date(lastMov.stockiohistory_date))/86400000)):null;
+    const storeQ=iMovs.filter(m=>String(m.stockiohistory_division||'').match(/店舗|店/)).reduce((a,m)=>a+Math.abs(parseInt(m.stockiohistory_quantity)||0),0);
+    const webQ=iMovs.filter(m=>String(m.stockiohistory_division||'').match(/WEB|web|EC|通販/)).reduce((a,m)=>a+Math.abs(parseInt(m.stockiohistory_quantity)||0),0);
+    const isStore=storeQ>webQ&&storeQ>0;
+    const isSale=!orders.some(r=>{
+      const d=new Date(r.receiveorder_row_order_date);
+      return(r.receiveorder_row_goods_id===gid||r.receiveorder_row_goods_owner_goods_id===code)&&(today-d)<CFG.staleDays*86400000;
+    });
+    return{gid,code,name,maker,avg,soDays,urg:urgency(avg),isStore,isSale,storeQ,webQ};
+  });
+  const makerMap={};
+  products.forEach(p=>{
+    if(!makerMap[p.maker])makerMap[p.maker]={maker:p.maker,count:0,critical:0,warning:0};
+    makerMap[p.maker].count++;
+    if(p.urg==='critical')makerMap[p.maker].critical++;
+    if(p.urg==='warning')makerMap[p.maker].warning++;
+  });
+  return{products,makerSummary:Object.values(makerMap).sort((a,b)=>b.count-a.count),storeItems:products.filter(p=>p.isStore),saleItems:products.filter(p=>p.isSale)};
+}
+
+async function fetchData(){
+  S.screen='loading';render();
+  try{
+    S.loadMsg='在庫0のSKUを取得中...';render();
+    const stockRes=await ne('/api_v1_master_stock/search',{'stock_quantity-eq':'0','fields':'stock_id,stock_goods_id,stock_goods_owner_goods_id,stock_goods_name,stock_quantity','limit':'200'});
+    const stocks=stockRes.data||[];
+    if(stocks.length===0){S.data={products:[],makerSummary:[],storeItems:[],saleItems:[]};S.lastUpdated=new Date();S.screen='dashboard';render();return;}
+    S.loadMsg='受注データ（直近30日）を取得中...';render();
+    const orderRes=await ne('/api_v1_receiveorder_row/search',{'receiveorder_row_order_date-from':fmt(daysAgo(CFG.lookback)),'receiveorder_row_order_date-to':fmt(new Date()),'fields':'receiveorder_row_goods_id,receiveorder_row_goods_owner_goods_id,receiveorder_row_quantity,receiveorder_row_order_date','limit':'2000'});
+    const orders=orderRes.data||[];
+    S.loadMsg='在庫変動履歴を取得中...';render();
+    const movRes=await ne('/api_v1_master_stockiohistory/search',{'stockiohistory_date-from':fmt(daysAgo(365)),'fields':'stockiohistory_goods_id,stockiohistory_goods_owner_goods_id,stockiohistory_quantity,stockiohistory_date,stockiohistory_division','limit':'2000'});
+    const movements=movRes.data||[];
+    S.loadMsg='データを分析中...';render();
+    S.data=processData(stocks,orders,movements);
+    S.lastUpdated=new Date();S.screen='dashboard';
+  }catch(e){S.error=e.message;S.screen='error';}
+  render();
+}
+
+function badgeUrgency(u){
+  if(u==='critical')return'<span class="badge badge-red">今すぐ発注</span>';
+  if(u==='warning')return'<span class="badge badge-amber">発注準備</span>';
+  return'<span class="badge badge-green">様子見</span>';
+}
+
+function renderAuth(){return`<div class="auth-wrap">
+<div class="auth-title">品切れ在庫ダッシュボード</div>
+<div class="auth-sub">NeXT Engine に接続して品切れSKUをリアルタイム分析します</div>
+<div class="card">
+<div class="info-box">① 下のボタンを押してNeXT Engineにログイン<br>② ログイン後にこのページに戻ってきます（自動）<br>③ 自動で取得されない場合はURLを貼り付けてください</div>
+<button class="btn" id="btnLogin">① NeXT Engineにログイン ↗</button>
+<div style="margin-top:14px;" class="form-group">
+<label>URLを手動で貼り付ける場合</label>
+<textarea id="urlPaste" placeholder="https://ne-proxy.vercel.app/?uid=...&state=..."></textarea>
+<div id="parsePreview"></div>
+</div>
+<button class="btn" id="btnAuthUrl" disabled>認証してデータを取得</button>
+${S.error?`<div class="err-box" style="margin-top:10px;">${S.error}</div>`:''}
+</div></div>`;}
+
+function renderLoading(){return`<div class="loading-wrap"><div class="spinner"></div><div class="loading-msg">${S.loadMsg||'接続中...'}</div></div>`;}
+
+function renderError(){return`<div class="auth-wrap"><div class="card">
+<div style="font-size:14px;font-weight:500;color:#b91c1c;margin-bottom:8px;">エラーが発生しました</div>
+<div style="font-size:12px;color:#666;margin-bottom:1rem;">${S.error}</div>
+<button class="btn-sm" id="btnBack">戻る</button>
+</div></div>`;}
+
+function renderDashboard(){
+  const{products,makerSummary,storeItems,saleItems}=S.data;
+  const filtered=products.filter(p=>{
+    if(S.filter.maker&&p.maker!==S.filter.maker)return false;
+    if(S.filter.urgency&&p.urg!==S.filter.urgency)return false;
+    return true;
+  });
+  const crit=products.filter(p=>p.urg==='critical').length;
+  const warn=products.filter(p=>p.urg==='warning').length;
+  const makers=[...new Set(products.map(p=>p.maker))].sort();
+  const upd=S.lastUpdated?S.lastUpdated.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+  return`<div class="dash-header">
+<div><div class="dash-title">品切れ在庫ダッシュボード</div><div class="dash-meta">最終更新：${upd}　<span style="cursor:pointer;text-decoration:underline;" id="btnLogout">ログアウト</span></div></div>
+<button class="btn-sm" id="btnRefresh">↺ データ更新</button>
+</div>
+<div class="metrics">
+<div class="metric"><div class="metric-label">品切れSKU総数</div><div class="metric-value">${products.length}</div></div>
+<div class="metric"><div class="metric-label">今すぐ発注</div><div class="metric-value red">${crit}</div></div>
+<div class="metric"><div class="metric-label">発注準備</div><div class="metric-value amber">${warn}</div></div>
+<div class="metric"><div class="metric-label">メーカー数</div><div class="metric-value">${makerSummary.length}</div></div>
+</div>
+<div class="card">
+<div class="section-head"><div class="section-title">メーカー別集計</div></div>
+<div class="table-scroll"><table>
+<thead><tr><th>メーカー</th><th style="text-align:right;">品切れSKU</th><th style="text-align:right;">今すぐ発注</th><th style="text-align:right;">発注準備</th></tr></thead>
+<tbody>${makerSummary.map(m=>`<tr><td>${m.maker}</td><td style="text-align:right;font-weight:500;">${m.count}</td><td style="text-align:right;">${m.critical>0?`<span style="color:#E24B4A;font-weight:500;">${m.critical}</span>`:'—'}</td><td style="text-align:right;">${m.warning>0?`<span style="color:#BA7517;font-weight:500;">${m.warning}</span>`:'—'}</td></tr>`).join('')}</tbody>
+</table></div></div>
+<div class="card">
+<div class="section-head">
+<div class="section-title">品切れSKU一覧 (${filtered.length}件)</div>
+<div class="filter-row">
+<select id="fMaker"><option value="">全メーカー</option>${makers.map(m=>`<option value="${m}"${S.filter.maker===m?' selected':''}>${m}</option>`).join('')}</select>
+<select id="fUrgency"><option value="">全緊急度</option><option value="critical">今すぐ発注</option><option value="warning">発注準備</option><option value="ok">様子見</option></select>
+</div></div>
+<div class="table-scroll"><table style="table-layout:fixed;width:100%;">
+<thead><tr><th style="width:90px;">メーカー</th><th style="width:105px;">商品コード</th><th>商品名</th><th style="width:70px;text-align:right;">品切れ経過</th><th style="width:80px;text-align:right;">販売速度/日</th><th style="width:105px;">発注優先度</th></tr></thead>
+<tbody>${filtered.length===0?'<tr><td colspan="6" style="text-align:center;color:#666;padding:2rem;">該当する商品がありません</td></tr>':
+filtered.map(p=>`<tr><td style="color:#666;">${p.maker}</td><td class="mono">${p.code}</td><td class="trunc">${p.name}${p.isStore?'<span class="tag tag-store">店舗優位</span>':''}${p.isSale?'<span class="tag tag-sale">セール推奨</span>':''}</td><td style="text-align:right;">${p.soDays!==null?p.soDays+'日':'—'}</td><td style="text-align:right;">${p.avg>0?p.avg+'個':'—'}</td><td>${badgeUrgency(p.urg)}</td></tr>`).join('')}
+</tbody></table></div></div>
+${storeItems.length>0?`<div class="card">
+<div class="section-head"><div class="section-title" style="color:#085041;">🏪 店舗優位品 (${storeItems.length}件)</div></div>
+<div class="section-sub">店舗チャネルの動きがWEBより多い商品です。</div>
+<div class="table-scroll"><table><thead><tr><th>商品コード</th><th>商品名</th><th>メーカー</th><th style="text-align:right;">店舗変動</th><th style="text-align:right;">WEB変動</th></tr></thead>
+<tbody>${storeItems.map(p=>`<tr><td class="mono">${p.code}</td><td class="trunc">${p.name}</td><td style="color:#666;">${p.maker}</td><td style="text-align:right;color:#0F6E56;font-weight:500;">${p.storeQ}</td><td style="text-align:right;color:#666;">${p.webQ}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+${saleItems.length>0?`<div class="card">
+<div class="section-head"><div class="section-title" style="color:#633806;">🏷 セール推奨品 (${saleItems.length}件)</div></div>
+<div class="section-sub">過去1年間の受注がない商品です。</div>
+<div class="table-scroll"><table><thead><tr><th>商品コード</th><th>商品名</th><th>メーカー</th><th style="text-align:right;">品切れ経過</th></tr></thead>
+<tbody>${saleItems.map(p=>`<tr><td class="mono">${p.code}</td><td class="trunc">${p.name}</td><td style="color:#666;">${p.maker}</td><td style="text-align:right;">${p.soDays!==null?p.soDays+'日':'—'}</td></tr>`).join('')}</tbody></table></div></div>`:''}`;
+}
+
+function render(){
+  const root=document.getElementById('app');
+  if(!root)return;
+  switch(S.screen){
+    case'auth':root.innerHTML=renderAuth();break;
+    case'loading':root.innerHTML=renderLoading();break;
+    case'dashboard':root.innerHTML=renderDashboard();break;
+    case'error':root.innerHTML=renderError();break;
+    default:root.innerHTML=renderLoading();
+  }
+  bind();
+}
+
+function bind(){
+  const urlPaste=document.getElementById('urlPaste');
+  const btnAuthUrl=document.getElementById('btnAuthUrl');
+  const preview=document.getElementById('parsePreview');
+  urlPaste?.addEventListener('input',e=>{
+    const val=e.target.value.trim();
+    if(!val){preview.innerHTML='';btnAuthUrl.disabled=true;return;}
+    const{uid,state,ok}=parseRedirectUrl(val);
+    if(ok){
+      S.parsedUid=uid;S.parsedState=state;
+      preview.innerHTML=`<div class="parsed-preview"><span style="color:green;">✓ 認識しました</span><br>uid: ${uid.substring(0,24)}...<br>state: ${state}</div>`;
+      btnAuthUrl.disabled=false;
+    }else{
+      preview.innerHTML=`<div class="parsed-preview" style="color:#b91c1c;">URLを認識できません</div>`;
+      btnAuthUrl.disabled=true;
+    }
+  });
+  document.getElementById('btnLogin')?.addEventListener('click',()=>{
+    const url=`${CFG.neBase}/users/sign_in?client_id=${encodeURIComponent(CFG.clientId)}&redirect_uri=${encodeURIComponent(CFG.redirectUri)}`;
+    location.href=url;
+  });
+  btnAuthUrl?.addEventListener('click',async()=>{
+    if(!S.parsedUid||!S.parsedState)return;
+    S.error=null;S.screen='loading';S.loadMsg='認証中...';render();
+    try{await auth(S.parsedUid,S.parsedState);await fetchData();}
+    catch(e){S.error=e.message;S.screen='error';render();}
+  });
+  document.getElementById('btnBack')?.addEventListener('click',()=>{S.screen='auth';S.error=null;render();});
+  document.getElementById('btnRefresh')?.addEventListener('click',()=>fetchData());
+  document.getElementById('btnLogout')?.addEventListener('click',()=>{clearToken();S.token=null;S.screen='auth';render();});
+  document.getElementById('fMaker')?.addEventListener('change',e=>{S.filter.maker=e.target.value;render();});
+  document.getElementById('fUrgency')?.addEventListener('change',e=>{S.filter.urgency=e.target.value;render();});
+}
+
+async function init(){
+  const params=new URLSearchParams(location.search);
+  const uid=params.get('uid');
+  const state=params.get('state');
+  if(uid&&state){
+    history.replaceState({},'',location.pathname);
+    S.screen='loading';S.loadMsg='認証中...';render();
+    try{await auth(uid,state);await fetchData();}
+    catch(e){S.error=e.message;S.screen='error';render();}
+    return;
+  }
+  const saved=loadToken();
+  if(saved?.t){S.token=saved.t;S.refresh=saved.r;await fetchData();}
+  else{S.screen='auth';render();}
+}
+
+init();
+</script>
+</body>
+</html>
+Done
